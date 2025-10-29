@@ -141,7 +141,7 @@ If LCD does not display, check I2C address (`0x27` or `0x3F`).
 | + (Positive) | **GPIO 15** | Control pin |
 | - (Negative) | **GND** | Ground |
 
-📸 *Screenshot:* ![image alt](
+📸 *Screenshot:* ![image alt](https://github.com/Sachursm/Attendance-Machine/blob/master/circuit_images/esp32_buzzer.png?raw=true)
 
 ---
 
