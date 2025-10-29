@@ -28,9 +28,9 @@
 #include <Adafruit_Fingerprint.h>
 
 // ---------- WiFi / Web App ----------
-const char* WIFI_SSID           = "GNXS-13D910";
-const char* WIFI_PASSWORD       = "12345678";
-const char* SCRIPT_WEB_APP_URL  = "https://script.google.com/macros/s/AKfycby8MyadXZtytMw2I6KJ65W6MPVuJ7TC9d5XiM5KUNKX8CLU7KrYU8VEZNP1NRPi36KAkQ/exec";
+const char* WIFI_SSID     = "YOUR_WIFI_SSID";
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+const char* WEB_APP_URL   = "YOUR_WEB_APP_URL"; // e.g. https://script.google.com/macros/s/AKfycb.../exec
 const char* TOKEN_SHARED_SECRET = "12354";
 
 // ---------- Admin / ID constraints ----------
