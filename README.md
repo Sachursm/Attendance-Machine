@@ -130,7 +130,7 @@ If LCD does not display, check I2C address (`0x27` or `0x3F`).
 | VCC (Red) | **5V** | Power |
 | GND (Black) | **GND** | Ground |
 
-📸 *Screenshot:* ![image alt](
+📸 *Screenshot:* ![image alt](https://github.com/Sachursm/Attendance-Machine/blob/master/circuit_images/esp32_R307S.png?raw=true)
 
 ---
 
