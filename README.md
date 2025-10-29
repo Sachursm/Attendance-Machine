@@ -40,8 +40,8 @@ It also includes an **“Attendance Report”** tab to filter data by **person a
 | **B** | Bind RFID card to a fingerprint ID |
 | **C** | Switch between Fingerprint and RFID mode |
 | **D** | Delete fingerprint |
-| **#** | Confirm |
-| **\*** | Cancel |
+| **\** | Confirm |
+| **#*** | Cancel |
 | **Admin Code:** `1234` |
 
 ✅ **User Feedback**
