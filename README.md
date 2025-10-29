@@ -116,8 +116,7 @@ If LCD does not display, check I2C address (`0x27` or `0x3F`).
 | VCC | **3.3V** | Power (⚠️ use 3.3V only) |
 | GND | **GND** | Ground |
 
-📸 *Screenshot:* `circuit_images/rfid_connection.png`
-
+📸 *Screenshot:* ![image alt](https://github.com/Sachursm/Attendance-Machine/blob/master/circuit_images/esp32_rfid.png?raw=true)
 **Note:** RC522 must always be connected to **3.3V**, not 5V.
 
 ---
@@ -131,7 +130,7 @@ If LCD does not display, check I2C address (`0x27` or `0x3F`).
 | VCC (Red) | **5V** | Power |
 | GND (Black) | **GND** | Ground |
 
-📸 *Screenshot:* `circuit_images/fingerprint_connection.png`
+📸 *Screenshot:* ![image alt](
 
 ---
 
@@ -142,7 +141,7 @@ If LCD does not display, check I2C address (`0x27` or `0x3F`).
 | + (Positive) | **GPIO 15** | Control pin |
 | - (Negative) | **GND** | Ground |
 
-📸 *Screenshot:* `circuit_images/buzzer_connection.png`
+📸 *Screenshot:* ![image alt](
 
 ---
 
