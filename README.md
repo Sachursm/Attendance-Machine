@@ -84,7 +84,7 @@ It also includes an **“Attendance Report”** tab to filter data by **person a
 | Col 3 | **GPIO 26** | Keypad Column 3 |
 | Col 4 | **GPIO 25** | Keypad Column 4 |
 
-📸 *Screenshot:* `circuit_images/keypad_connection.png`
+📸 *Screenshot:* ![image alt](https://github.com/Sachursm/Attendance-Machine/blob/master/circuit_images/esp32_keypad.png?raw=true)
 
 ---
 
