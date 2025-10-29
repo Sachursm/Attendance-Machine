@@ -1,0 +1,384 @@
+/***** CONFIG *****/
+const SHEET1_NAME   = 'Attendance';
+const SHEET2_NAME   = 'Users';
+const TOKEN_SHARED_SECRET = '12354';
+const TZ = 'Asia/Kolkata';
+
+/***** UTILITIES *****/
+const U = {
+  ss: () => SpreadsheetApp.getActiveSpreadsheet(),
+  s1: () => U.ss().getSheetByName(SHEET1_NAME),
+  s2: () => U.ss().getSheetByName(SHEET2_NAME),
+
+  norm: s => String(s || '').trim().toUpperCase(),
+  // Local date/time strings
+  today: () => Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'),
+  now:   () => Utilities.formatDate(new Date(), TZ, 'HH:mm:ss'),
+};
+
+/***** INITIAL SETUP *****/
+function ensureSheets() {
+  const ss = U.ss();
+  let s1 = U.s1(), s2 = U.s2();
+
+  if (!s1) {
+    s1 = ss.insertSheet(SHEET1_NAME);
+    s1.getRange('A1:F1').setValues([['UID','FingerID','Name','Date','IN Time','OUT Time']]);
+    s1.setFrozenRows(1);
+  }
+
+  if (!s2) {
+    s2 = ss.insertSheet(SHEET2_NAME);
+    s2.getRange('A1:C1').setValues([['UID','Name','FingerID']]);
+    s2.setFrozenRows(1);
+  } else {
+    if (s2.getMaxColumns() < 3) s2.insertColumnsAfter(2, 1);
+    s2.getRange('A1:C1').setValues([['UID','Name','FingerID']]);
+  }
+}
+
+/***** BASIC USERS HELPERS *****/
+function ensureUserRow(uid) {
+  const s2 = U.s2(); const last = s2.getLastRow();
+  if (last >= 2) {
+    const vals = s2.getRange(2,1,last-1,1).getValues(); // UID only
+    for (let i=0;i<vals.length;i++) if (U.norm(vals[i][0]) === uid) return;
+  }
+  s2.appendRow([uid, 'Unknown', '']);
+}
+
+function getName(uid) {
+  const s2 = U.s2(); const last = s2.getLastRow();
+  if (last < 2) return 'Unknown';
+  const vals = s2.getRange(2,1,last-1,2).getValues(); // UID, Name
+  for (let i=0;i<vals.length;i++)
+    if (U.norm(vals[i][0]) === uid) return String(vals[i][1]||'').trim() || 'Unknown';
+  return 'Unknown';
+}
+
+function setFingerIdOnRFID(rfuid, fingerIdStr) {
+  const s2 = U.s2(); const last = s2.getLastRow();
+  if (last < 2) return;
+  const vals = s2.getRange(2,1,last-1,3).getValues(); // UID, Name, FingerID
+  for (let i=0;i<vals.length;i++) {
+    if (U.norm(vals[i][0]) === rfuid) {
+      s2.getRange(i+2, 3).setValue(fingerIdStr); // col C
+      return;
+    }
+  }
+}
+
+/***** ATTENDANCE WRITE/UPDATE *****/
+function getLinkedRFIDForFingerprint(fpUID) {
+  // If it's a fingerprint UID (FP:X), find the linked RFID card
+  if (!uidIsFP(fpUID)) return null;
+  
+  const fid = fpNumFromUID(fpUID);
+  if (!fid) return null;
+  
+  const s2 = U.s2(); 
+  const last = s2.getLastRow();
+  if (last < 2) return null;
+  
+  const vals = s2.getRange(2,1,last-1,3).getValues(); // UID, Name, FingerID
+  for (let i=0;i<vals.length;i++) {
+    const uid = U.norm(vals[i][0]);
+    const fidStr = String(vals[i][2] || '').trim();
+    const parsedFID = parseFingerID(fidStr);
+    
+    // Find RFID card with matching FingerID
+    if (!uidIsFP(uid) && parsedFID === fid) {
+      return uid;
+    }
+  }
+  return null;
+}
+
+function getFingerIDForUID(uid) {
+  const s2 = U.s2(); 
+  const last = s2.getLastRow();
+  if (last < 2) return '';
+  
+  const vals = s2.getRange(2,1,last-1,3).getValues(); // UID, Name, FingerID
+  for (let i=0;i<vals.length;i++) {
+    if (U.norm(vals[i][0]) === uid) {
+      return String(vals[i][2] || '').trim(); // Return FingerID from Users sheet
+    }
+  }
+  return '';
+}
+
+function upsertAttendance(uid, currentName, dateStr, timeStr) {
+  const s1 = U.s1(); 
+  const last = s1.getLastRow();
+  
+  // Get FingerID for this UID (from Users sheet)
+  const fingerID = getFingerIDForUID(uid);
+
+  if (last >= 2) {
+    const vals = s1.getRange(2,1,last-1,6).getValues(); // UID,FingerID,Name,Date,IN,OUT
+    for (let i=0;i<vals.length;i++) {
+      const rUID  = U.norm(vals[i][0]);
+      const rDate = Utilities.formatDate(new Date(vals[i][3]), TZ, 'yyyy-MM-dd');
+      const rOut  = vals[i][5];
+
+      if (rUID === uid && rDate === dateStr) {
+        // Update FingerID if changed
+        if (String(vals[i][1]||'').trim() !== fingerID)
+          s1.getRange(i+2, 2).setValue(fingerID);
+        // Update name if changed
+        if (String(vals[i][2]||'').trim() !== currentName)
+          s1.getRange(i+2, 3).setValue(currentName);
+        
+        if (!rOut) {
+          s1.getRange(i+2, 6).setValue(timeStr);
+          return { action:'CHECK-OUT', uid, name:currentName, date:dateStr, out:timeStr };
+        } else {
+          s1.getRange(i+2, 6).setValue(timeStr); // overwrite with latest
+          return { action:'UPDATED-OUT', uid, name:currentName, date:dateStr, out:timeStr };
+        }
+      }
+    }
+  }
+
+  s1.appendRow([uid, fingerID, currentName, dateStr, timeStr, '']);
+  return { action:'CHECK-IN', uid, name:currentName, date:dateStr, in:timeStr };
+}
+
+function updateAttendanceNamesForUID(uid, newName) {
+  const s1 = U.s1(); 
+  const last = s1.getLastRow();
+  if (last < 2) return;
+  
+  const vals = s1.getRange(2,1,last-1,3).getValues(); // UID, FingerID, Name
+  const rows = [], data = [];
+  const fingerID = getFingerIDForUID(uid);
+  
+  for (let i=0;i<vals.length;i++) {
+    if (U.norm(vals[i][0]) === uid) {
+      const existingName = String(vals[i][2]||'').trim();
+      const existingFID = String(vals[i][1]||'').trim();
+      
+      // Update name if different
+      if (existingName !== newName) { 
+        rows.push(i+2); 
+        data.push([existingFID, newName]); 
+      }
+      // Update FingerID if different
+      else if (existingFID !== fingerID) {
+        rows.push(i+2);
+        data.push([fingerID, existingName]);
+      }
+    }
+  }
+  
+  if (rows.length) {
+    const nots = rows.map(r => s1.getRange(r,2,1,2).getA1Notation()); // B:C columns
+    s1.getRangeList(nots).setValues(data);
+  }
+}
+
+/***** LINKING HELPERS (FP:ID <-> RFID with FingerID column) *****/
+function uidIsFP(uid) { return /^FP:\s*\d+$/i.test(uid); }
+function fpNumFromUID(uid) {
+  const m = String(uid||'').match(/^FP:\s*(\d+)$/i);
+  return m ? Number(m[1]) : null;
+}
+function ensureFPUserRow(fid) {
+  const fpuid = 'FP:' + fid;
+  ensureUserRow(fpuid);
+  return fpuid;
+}
+function findUsersRows() {
+  const s2 = U.s2(); const last = s2.getLastRow();
+  const rows = last >= 2 ? s2.getRange(2,1,last-1,3).getValues() : [];
+  return { s2, last, rows }; // [UID, Name, FingerID]
+}
+
+// Parse FingerID - accepts both "1" and "FP:1" formats
+function parseFingerID(fidStr) {
+  const str = String(fidStr || '').trim();
+  if (!str) return null;
+  
+  // Check if it's in FP:X format
+  const fpMatch = str.match(/^FP:\s*(\d+)$/i);
+  if (fpMatch) return Number(fpMatch[1]);
+  
+  // Otherwise try to parse as plain number
+  const num = Number(str);
+  return isNaN(num) ? null : num;
+}
+
+/**
+ * Set Name for FP:<fid> and for all RFID rows with FingerID==fid.
+ * Also updates all Attendance rows for those UIDs.
+ */
+function propagateNameAcrossLinked(fid, name) {
+  const { s2, rows } = findUsersRows();
+  const want = String(name || 'Unknown').trim();
+
+  const write = [];
+  const touchedUIDs = {};
+
+  for (let i=0;i<rows.length;i++) {
+    const uid  = U.norm(rows[i][0]);
+    const nm   = String(rows[i][1]||'').trim();
+    const fstr = String(rows[i][2]||'').trim();
+    const isFP = uidIsFP(uid) && fpNumFromUID(uid) === fid;
+    const parsedFID = parseFingerID(fstr);
+    const matchesFID = parsedFID === fid;
+
+    if (isFP || matchesFID) {
+      if (nm !== want) write.push({row:i+2});
+      touchedUIDs[uid] = true;
+    }
+  }
+
+  if (write.length) {
+    const ranges = write.map(w => s2.getRange(w.row, 2).getA1Notation());
+    s2.getRangeList(ranges).setValues(write.map(_ => [want]));
+  }
+
+  // Update Attendance names for each UID touched
+  Object.keys(touchedUIDs).forEach(uid => updateAttendanceNamesForUID(uid, want));
+}
+
+/***** HTTP HANDLERS *****/
+function doPost(e) {
+  try {
+    ensureSheets();
+    if (!e || !e.postData || !e.postData.contents)
+      return jsonOut({ok:false, error:'No POST body'}, 400);
+
+    const data  = JSON.parse(e.postData.contents);
+    const token = String(data.token || '');
+    if (token !== TOKEN_SHARED_SECRET) return jsonOut({ok:false, error:'Unauthorized'}, 401);
+
+    // ---- LINK branch ----
+    if (String(data.action||'').toLowerCase() === 'link') {
+      const fpId  = Number(data.finger_id);
+      const rfuid = U.norm(data.rfid_uid || '');
+      if (!fpId || !rfuid) return jsonOut({ok:false, error:'Missing finger_id or rfid_uid'}, 400);
+
+      // Only create/update the RFID card row, NOT the FP:X row
+      ensureUserRow(rfuid);
+      setFingerIdOnRFID(rfuid, 'FP:' + String(fpId)); // Store as FP:X format
+
+      // Get the name from RFID row if it exists and is not Unknown
+      const nRF = getName(rfuid);
+      if (nRF && nRF.toUpperCase() !== 'UNKNOWN') {
+        // Name already exists on RFID, keep it
+      }
+
+      return jsonOut({ok:true, action:'LINK', finger_id:fpId, rfid_uid:rfuid});
+    }
+
+    // ---- Attendance branch ----
+    const uid = U.norm(data.uid || '');
+    if (!uid) return jsonOut({ok:false, error:'UID missing'}, 400);
+
+    // Check if it's a fingerprint scan
+    if (uidIsFP(uid)) {
+      // Find the linked RFID card
+      const linkedRFID = getLinkedRFIDForFingerprint(uid);
+      if (!linkedRFID) {
+        return jsonOut({ok:false, error:'Fingerprint not linked to RFID card'}, 400);
+      }
+      
+      // Use the RFID card for attendance
+      ensureUserRow(linkedRFID);
+      const name = getName(linkedRFID) || 'Unknown';
+      const dateStr = U.today();
+      const timeStr = U.now();
+      const res = upsertAttendance(linkedRFID, name, dateStr, timeStr);
+      updateAttendanceNamesForUID(linkedRFID, name);
+      
+      return jsonOut({ok:true, ...res, scanned_as:uid});
+    }
+
+    // Regular RFID scan
+    ensureUserRow(uid);
+    const name = getName(uid) || 'Unknown';
+    const dateStr = U.today();
+    const timeStr = U.now();
+    const res = upsertAttendance(uid, name, dateStr, timeStr);
+    updateAttendanceNamesForUID(uid, name);
+
+    return jsonOut({ok:true, ...res});
+
+  } catch (err) {
+    return jsonOut({ok:false, error:String(err)}, 500);
+  }
+}
+
+// Optional GET tester: .../exec?token=12354&uid=9F:05:AE:1F
+function doGet(e) {
+  try {
+    ensureSheets();
+    const token = String(e.parameter.token || '');
+    if (token !== TOKEN_SHARED_SECRET) return jsonOut({ok:false, error:'Unauthorized'}, 401);
+
+    // tester for attendance
+    const uid = U.norm(e.parameter.uid || '');
+    if (!uid) return jsonOut({ok:false, error:'UID missing'}, 400);
+    ensureUserRow(uid);
+    const name = getName(uid) || 'Unknown';
+    const res = upsertAttendance(uid, name, U.today(), U.now());
+    updateAttendanceNamesForUID(uid, name);
+    return jsonOut({ok:true, via:'GET', ...res});
+  } catch (err) {
+    return jsonOut({ok:false, error:String(err)}, 500);
+  }
+}
+
+/***** EDIT TRIGGERS *****/
+function onEdit(e) {
+  try {
+    ensureSheets();
+    const sh = e.range.getSheet();
+
+    if (sh.getName() === SHEET2_NAME) {
+      const r = e.range.getRow(), c = e.range.getColumn();
+      if (r >= 2 && (c === 2 || c === 3)) { // Name or FingerID edited
+        const uidRaw = sh.getRange(r,1).getValue();
+        const uid = U.norm(uidRaw);
+        const name = String(sh.getRange(r,2).getValue() || '').trim() || 'Unknown';
+        const fidStr = String(sh.getRange(r,3).getValue() || '').trim();
+
+        // Only process if this is NOT a FP:X row (we don't want FP:X rows in Users)
+        if (uidIsFP(uid)) {
+          // Delete this row - FP:X should not exist in Users sheet
+          sh.deleteRow(r);
+          return;
+        }
+
+        // Name edited: update attendance records
+        if (c === 2) {
+          updateAttendanceNamesForUID(uid, name);
+        }
+
+        // FingerID edited: normalize to FP:X format
+        if (c === 3 && fidStr) {
+          const fid = parseFingerID(fidStr);
+          if (fid) {
+            const normalized = 'FP:' + fid;
+            // Update the cell to FP:X format if it's just a number
+            if (fidStr !== normalized) {
+              sh.getRange(r, 3).setValue(normalized);
+            }
+          }
+        }
+      }
+      return;
+    }
+  } catch (err) {
+    // swallow simple trigger errors
+  }
+}
+
+/***** JSON OUT *****/
+function jsonOut(obj, code=200) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
