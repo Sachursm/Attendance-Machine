@@ -97,7 +97,7 @@ It also includes an **“Attendance Report”** tab to filter data by **person a
 | SDA | **GPIO 21** | I2C data line |
 | SCL | **GPIO 22** | I2C clock line |
 
-📸 *Screenshot:* `circuit_images/lcd_connection.png`
+📸 *Screenshot:* ![image alt](https://github.com/Sachursm/Attendance-Machine/blob/master/circuit_images/esp32_lcd.png?raw=true)
 
 **Tip:**  
 If LCD does not display, check I2C address (`0x27` or `0x3F`).
